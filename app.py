@@ -27,6 +27,21 @@ TEMPLATES = {
 }
 
 def init_db():
+
+    with sqlite3.connect('database.db') as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS sent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user TEXT,
+                phone TEXT,
+                message TEXT,
+                message_id TEXT UNIQUE,
+                status TEXT,
+                delivery_status TEXT,
+                timestamp TEXT
+            )
+    ''')
+
     with sqlite3.connect('database.db') as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS whatsapp_numbers (
@@ -200,6 +215,7 @@ def send_template():
 
         # Process and send messages
         sent_results = []
+        
         for user in users:
             try:
                 message = selected_template['body']
@@ -249,6 +265,27 @@ def send_template():
                     status = f"❌ Failed ({response.status_code})"
                     delivery_status = "Unknown error occurred"
                 
+
+
+
+                # Save to DB for webhook tracking
+                with sqlite3.connect('database.db') as conn:
+                    conn.execute('''
+                        INSERT OR IGNORE INTO sent_messages 
+                        (user, phone, message, message_id, status, delivery_status, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        user.get('name', 'N/A'),
+                        phone,
+                        message,
+                        message_id,
+                        status,
+                        delivery_status,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    ))
+
+
+
                 # Record result with detailed status
                 sent_results.append({
                     'user': user.get('name', 'N/A'),
@@ -262,25 +299,25 @@ def send_template():
                 })
                 
                 # For successful sends, you can optionally check delivery status later
-                if response.status_code == 200:
-                    try:
-                        # Check message status after a short delay
-                        time.sleep(2)  # Wait 2 seconds before checking status
-                        status_url = f"https://graph.facebook.com/v23.0/{message_id}"
-                        status_response = requests.get(status_url, headers=headers)
-                        status_data = status_response.json() if status_response.content else None
+                # if response.status_code == 200:
+                #     try:
+                #         # Check message status after a short delay
+                #         time.sleep(2)  # Wait 2 seconds before checking status
+                #         status_url = f"https://graph.facebook.com/v23.0/{message_id}"
+                #         status_response = requests.get(status_url, headers=headers)
+                #         status_data = status_response.json() if status_response.content else None
                         
-                        if status_response.status_code == 200:
-                            current_status = status_data.get('status', 'unknown')
-                            if current_status == 'delivered':
-                                sent_results[-1]['delivery_status'] = 'Delivered to recipient'
-                            elif current_status == 'sent':
-                                sent_results[-1]['delivery_status'] = 'Sent (not yet delivered)'
-                            elif current_status == 'failed':
-                                sent_results[-1]['delivery_status'] = 'Failed to deliver'
-                                sent_results[-1]['status'] = '❌ Failed (Delivery)'
-                    except Exception as e:
-                        sent_results[-1]['delivery_status'] = f"Status check failed: {str(e)}"
+                #         if status_response.status_code == 200:
+                #             current_status = status_data.get('status', 'unknown')
+                #             if current_status == 'delivered':
+                #                 sent_results[-1]['delivery_status'] = 'Delivered to recipient'
+                #             elif current_status == 'sent':
+                #                 sent_results[-1]['delivery_status'] = 'Sent (not yet delivered)'
+                #             elif current_status == 'failed':
+                #                 sent_results[-1]['delivery_status'] = 'Failed to deliver'
+                #                 sent_results[-1]['status'] = '❌ Failed (Delivery)'
+                #     except Exception as e:
+                #         sent_results[-1]['delivery_status'] = f"Status check failed: {str(e)}"
                 
             except Exception as e:
                 sent_results.append({
@@ -290,12 +327,94 @@ def send_template():
                     'status': '❌ Failed'
                 })
 
-        return render_template('results.html', 
-                           messages=sent_results,
-                           template=selected_template)
+
+        with sqlite3.connect('database.db') as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute('SELECT * FROM sent_messages ORDER BY timestamp DESC').fetchall()
+
+        # return render_template('results.html', messages=rows, template={"name": "Latest", "body": "N/A"})
+        session['last_template'] = {"name": "Latest", "body": "N/A"}
+        return redirect(url_for('show_results'))
+    
+
+
+        
+       
 
     # Initial view - show template selection
     return render_template('select_template.html', templates=TEMPLATES)
+
+
+
+
+@app.route('/results')
+def show_results():
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('SELECT * FROM sent_messages ORDER BY timestamp DESC').fetchall()
+    return render_template('results.html', messages=rows, template=session.get('last_template'))
+
+
+
+
+
+
+@app.route('/webhook', methods=['GET', 'POST'])
+def whatsapp_webhook():
+    if request.method == 'GET':
+        # Verification step for webhook subscription
+        VERIFY_TOKEN = "my_verify_token"
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+
+        if mode == "subscribe" and token == VERIFY_TOKEN:
+            return challenge, 200
+        else:
+            return "Verification failed", 403
+
+    elif request.method == 'POST':
+        data = request.get_json()
+        if not data:
+            return "No data", 400
+
+        try:
+            changes = data.get("entry", [])[0].get("changes", [])
+            for change in changes:
+                statuses = change.get("value", {}).get("statuses", [])
+                for status_event in statuses:
+                    message_id = status_event.get("id")
+                    status = status_event.get("status", "").lower()
+
+                    # Map WhatsApp statuses to display values
+                    delivery_status_map = {
+                        "sent": "📤 Sent (not yet delivered)",
+                        "delivered": "✅ Delivered",
+                        "read": "👁 Read",
+                        "failed": "❌ Failed to deliver"
+                    }
+                    delivery_status = delivery_status_map.get(status, status)
+
+                    # Update DB with new status
+                    with sqlite3.connect('database.db') as conn:
+                        conn.execute('''
+                            UPDATE sent_messages
+                            SET delivery_status = ?, status = ?
+                            WHERE message_id = ?
+                        ''', (
+                            delivery_status,
+                            "✅ Sent" if status in ["sent", "delivered", "read"] else "❌ Failed",
+                            message_id
+                        ))
+
+        except Exception as e:
+            print("Webhook processing error:", e)
+
+        return "EVENT_RECEIVED", 200
+
+
+
+
 
 
 
