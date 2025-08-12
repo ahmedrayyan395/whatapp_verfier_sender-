@@ -1,5 +1,6 @@
 # from flask import Flask, flash, render_template, request, redirect, url_for
 from datetime import datetime
+import random
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 import sqlite3
 import requests
@@ -26,6 +27,16 @@ TEMPLATES = {
     }
 }
 
+
+def clean_param(text):
+    # Replace newlines and tabs with a space
+    text = text.replace("\n", " ").replace("\t", " ")
+    # Collapse multiple spaces to a maximum of 4
+    text = re.sub(r' {5,}', '    ', text)
+    return text.strip()
+
+
+
 def init_db():
 
     with sqlite3.connect('database.db') as conn:
@@ -51,6 +62,8 @@ def init_db():
                 token TEXT
             )
         ''')
+
+
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -218,20 +231,44 @@ def send_template():
         
         for user in users:
             try:
-                message = selected_template['body']
+                message_b = selected_template['body']
+                
+
                 phone = user.get('phone', '')
+                user_name=user.get('name','')
                 
                 # Replace placeholders with user data
                 for placeholder, field in placeholder_map.items():
                     value = str(user.get(field, f"[MISSING: {field}]"))
-                    message = message.replace(f"{{{{{placeholder}}}}}", value)
+                    message_b = message_b.replace(f"{{{{{placeholder}}}}}", value)
 
                 # Prepare WhatsApp API payload
+                # payload = {
+                #     "messaging_product": "whatsapp",
+                #     "to": phone,
+                #     "type": "text",
+                #     "text": {"body": message}
+                # }
+
+                message=clean_param(message_b)
+
                 payload = {
                     "messaging_product": "whatsapp",
                     "to": phone,
-                    "type": "text",
-                    "text": {"body": message}
+                    "type": "template",
+                    "template": {
+                        "name": "the_big_beautiful_template",  # Must match EXACT template name
+                        "language": { "code": "en" },       # Must match approved template language
+                        "components": [
+                            {
+                                "type": "body",
+                                "parameters": [
+                                    { "type": "text", "text": user_name },  # {{1}}
+                                    { "type": "text", "text": message }     # {{2}}
+                                ]
+                            }
+                        ]
+                    }
                 }
 
                 headers = {
@@ -239,12 +276,21 @@ def send_template():
                     "Content-Type": "application/json"
                 }
 
+
                 # In your send_template route, update the message sending part:
 
                 # Send message
-                url = f"https://graph.facebook.com/v23.0/{phone_number_id}/messages"
+                url = f"https://graph.facebook.com/v23.0/{phone_number_id}/marketing_messages"
+                # time.sleep(random.uniform(2, 5))
+
                 response = requests.post(url, headers=headers, json=payload)
+
+                print(response.status_code, response.text)
+                
+
                 response_data = response.json() if response.content else None
+                
+
                 
                 # Determine message status
                 if response.status_code == 200:
@@ -266,7 +312,7 @@ def send_template():
                     delivery_status = "Unknown error occurred"
                 
 
-
+                    
 
                 # Save to DB for webhook tracking
                 with sqlite3.connect('database.db') as conn:
@@ -282,6 +328,7 @@ def send_template():
                         status,
                         delivery_status,
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
                     ))
 
 
@@ -411,9 +458,6 @@ def whatsapp_webhook():
             print("Webhook processing error:", e)
 
         return "EVENT_RECEIVED", 200
-
-
-
 
 
 
