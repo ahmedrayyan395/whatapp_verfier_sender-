@@ -1,0 +1,26 @@
+<form method="post">
+  <label for="template_id">Choose Template:</label>
+  <select name="template_id" id="template_id" required>
+    {% for key, template in templates.items() %}
+      <option value="{{ key }}">{{ key.replace('_', ' ').title() }}</option>
+    {% endfor %}
+  </select><br><br>
+
+  <h3>Map Template Placeholders</h3>
+
+  <label for="map_customer_name">Map {{customer_name}} to:</label>
+  <select name="map_customer_name" required>
+    {% for field in sample_user %}
+      <option value="{{ field }}">{{ field }}</option>
+    {% endfor %}
+  </select><br><br>
+
+  <label for="map_order_id">Map {{order_id}} to:</label>
+  <select name="map_order_id" required>
+    {% for field in sample_user %}
+      <option value="{{ field }}">{{ field }}</option>
+    {% endfor %}
+  </select><br><br>
+
+  <input type="submit" value="Send Messages">
+</form>
