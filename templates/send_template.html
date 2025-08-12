@@ -1,26 +1,111 @@
-<form method="post">
-  <label for="template_id">Choose Template:</label>
-  <select name="template_id" id="template_id" required>
-    {% for key, template in templates.items() %}
-      <option value="{{ key }}">{{ key.replace('_', ' ').title() }}</option>
-    {% endfor %}
-  </select><br><br>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Send WhatsApp Template</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            max-width: 800px;
+        }
+        h1 {
+            color: #333;
+        }
+        form {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        select {
+            padding: 8px;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Send WhatsApp Message Template</h1>
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
+    <form method="post">
+        <label for="template_id"><strong>Choose Template:</strong></label><br>
+        <select name="template_id" id="template_id" required onchange="this.form.submit()">
+            <option value="">-- Select Template --</option>
+            {% for key, template in templates.items() %}
+                <option value="{{ key }}" {% if key == template_id %}selected{% endif %}>
+                    {{ key.replace('_', ' ').title() }}
+                </option>
+            {% endfor %}
+        </select>
+        <br><br>
 
-  <h3>Map Template Placeholders</h3>
+        {% if placeholders %}
+        <h3>Map Template Variables to User Fields</h3>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Template Variable</th>
+                    <th>Map To User Field</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for placeholder in placeholders %}
+                <tr>
+                    <td><strong>{{ "{{" + placeholder + "}}" }}</strong></td>
+                    <td>
+                        <select name="map_{{ placeholder }}" required>
+                            <option value="">-- Select matching field --</option>
+                            {% for field in sample_user_fields %}
+                                <option value="{{ field }}" 
+                                    {% if placeholder.lower() in field.lower() or field.lower() in placeholder.lower() %}selected{% endif %}>
+                                    {{ field }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
 
-  <label for="map_customer_name">Map {{customer_name}} to:</label>
-  <select name="map_customer_name" required>
-    {% for field in sample_user %}
-      <option value="{{ field }}">{{ field }}</option>
-    {% endfor %}
-  </select><br><br>
-
-  <label for="map_order_id">Map {{order_id}} to:</label>
-  <select name="map_order_id" required>
-    {% for field in sample_user %}
-      <option value="{{ field }}">{{ field }}</option>
-    {% endfor %}
-  </select><br><br>
-
-  <input type="submit" value="Send Messages">
-</form>
+        <input type="submit" value="Send Messages">
+        {% endif %}
+    </form>
+</body>
+</html>
