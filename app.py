@@ -3,9 +3,9 @@ from datetime import datetime
 import sqlite3
 import pandas as pd
 import requests
-import json
+# import json
 import re
-import time 
+# import time 
 from io import BytesIO
 from flask import send_file
 
@@ -123,22 +123,7 @@ def init_db():
             )
         ''')
 
-def get_template_variables(template_body):
-    return re.findall(r'{{\s*(\w+)\s*}}', template_body)
 
-# Helper function to get all templates from database
-def get_all_templates():
-    with sqlite3.connect('database.db') as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute('SELECT * FROM templates ORDER BY name')
-        return cursor.fetchall()
-
-# Helper function to get a single template by ID
-def get_template(template_id):
-    with sqlite3.connect('database.db') as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
-        return cursor.fetchone()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -201,9 +186,34 @@ def index():
 
     return render_template('index.html', verified_numbers=verified_numbers)
 
+
+
+
+
+def get_template_variables(template_body):
+    return re.findall(r'{{\s*(\w+)\s*}}', template_body)
+
+# Helper function to get all templates from database
+def get_all_templates():
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute('SELECT * FROM templates ORDER BY name')
+        return cursor.fetchall()
+
+# Helper function to get a single template by ID
+def get_template(template_id):
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
+        return cursor.fetchone()
+
+
+
+
 @app.route('/templates', methods=['GET', 'POST'])
 def manage_templates():
     if request.method == 'POST':
+
         # Handle template creation or update
         name = request.form.get('name')
         subject = request.form.get('subject')
@@ -237,9 +247,12 @@ def manage_templates():
     templates = get_all_templates()
     return render_template('manage_templates.html', templates=templates)
 
+
+
 @app.route('/template/create', methods=['GET', 'POST'])
 def create_template():
     if request.method == 'POST':
+
         name = request.form.get('name')
         subject = request.form.get('subject')
         body = request.form.get('body')
@@ -273,6 +286,8 @@ def edit_template(template_id):
         return redirect(url_for('manage_templates'))
     return render_template('edit_template.html', template=template)
 
+
+
 @app.route('/template/delete/<int:template_id>', methods=['POST'])
 def delete_template(template_id):
     try:
@@ -282,6 +297,8 @@ def delete_template(template_id):
     except Exception as e:
         flash(f'Error deleting template: {str(e)}', 'error')
     return redirect(url_for('manage_templates'))
+
+
 
 @app.route('/send_template', methods=['GET', 'POST'])
 def send_template():
@@ -323,6 +340,9 @@ def send_template():
         if not selected_template:
             flash('Invalid template selected', 'error')
             return redirect(url_for('send_template'))
+        
+
+        # getting mapping sids 
         
         placeholders = get_template_variables(selected_template['body'])
         
@@ -456,8 +476,8 @@ def send_template():
                 with sqlite3.connect('database.db') as conn:
                     conn.execute('''
                         INSERT INTO sent_messages 
-                        (user, phone, message, message_id, status, delivery_status, timestamp, user_type)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (user, phone, message, message_id, status, delivery_status, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         user.get('name', 'N/A'),
                         phone,
@@ -466,8 +486,10 @@ def send_template():
                         status,
                         delivery_status,
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        user.get('user_type', 'unknown')
+                        # user.get('user_type', 'unknown')
                     ))
+
+                    
 
                 sent_results.append({
                     'user': user.get('name', 'N/A'),
@@ -481,7 +503,7 @@ def send_template():
                     'user': user.get('name', 'N/A'),
                     'phone': user.get('phone', 'N/A'),
                     'status': f"❌ Failed: {str(e)}",
-                    'user_type': user.get('user_type', 'unknown')
+                    # 'user_type': user.get('user_type', 'unknown')
                 })
 
         # Prepare summary message
@@ -748,6 +770,9 @@ def whatsapp_webhook():
             print("Webhook processing error:", e)
 
         return "EVENT_RECEIVED", 200
+
+
+
 
 if __name__ == '__main__':
     init_db()
