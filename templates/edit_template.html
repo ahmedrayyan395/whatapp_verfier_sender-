@@ -1,0 +1,72 @@
+<!-- {% extends "base.html" %} -->
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{% if template %}Edit{% else %}Create New{% endif %} Template</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('manage_templates') }}">
+                {% if template %}
+                    <input type="hidden" name="template_id" value="{{ template['id'] }}">
+                {% endif %}
+                
+                <div class="mb-3">
+                    <label for="name" class="form-label">Template Name</label>
+                    <input type="text" class="form-control" id="name" name="name" 
+                           value="{{ template['name'] if template else '' }}" required>
+                    <div class="form-text">Unique identifier for this template</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="subject" class="form-label">Subject (Optional)</label>
+                    <input type="text" class="form-control" id="subject" name="subject" 
+                           value="{{ template['subject'] if template else '' }}">
+                    <div class="form-text">Used for email subjects or reference</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="body" class="form-label">Template Body</label>
+                    <textarea class="form-control" id="body" name="body" rows="10" 
+                              required>{{ template['body'] if template else '' }}</textarea>
+                    <div class="form-text">
+                        Use {{variable_name}} for placeholders. Current variables detected: 
+                        {% if template %}
+                            {% set vars = get_template_variables(template['body']) %}
+                            {% for var in vars %}
+                                <span class="badge bg-secondary">{{ var }}</span>
+                            {% endfor %}
+                        {% else %}
+                            None yet
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-between">
+                    <a href="{{ url_for('manage_templates') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to List
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    {% if template %}
+    <div class="card mt-3">
+        <div class="card-header">
+            <h5 class="mb-0">Template Preview</h5>
+        </div>
+        <div class="card-body">
+            <div class="border p-3 bg-light">
+                <h6>Subject: {{ template['subject'] }}</h6>
+                <hr>
+                <pre>{{ template['body'] }}</pre>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

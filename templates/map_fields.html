@@ -7,13 +7,49 @@
 <body>
     <div class="container mt-5">
         <h1>Map Fields for {{ template_id.replace('_', ' ').title() }}</h1>
+
+        <!-- User Type Selection Card -->
+        <!-- {% set selected_type = request.form.get('user_type', 'all') %} -->
+
         
+
         {% if error %}
         <div class="alert alert-danger">{{ error }}</div>
         {% endif %}
 
-        <form method="POST" action="{{ url_for('send_template') }}" >
+        <form method="POST" action="{{ url_for('send_template') }}">
             <input type="hidden" name="template_id" value="{{ template_id }}">
+
+
+
+            <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Recipient Selection</h5>
+                <div class="mb-3">
+                    <label class="form-label">Sending to:</label>
+                    <select name="user_type" class="form-select" required>
+                        <option value="all" {% if selected_type == 'all' %}selected{% endif %}>
+                            All Users
+                        </option>
+                        {% for type in user_types %}
+                            <option value="{{ type['user_type'] }}" {% if selected_type == type['user_type'] %}selected{% endif %}>
+                                {{ type['user_type']|title }} Users
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <!-- <div class="form-text">
+                        Selected: {{ users|length }} users will receive this message
+                    </div> -->
+                </div>
+            </div>
+        </div>
+
+
+
+
+            
+            <!-- Include the user_type in the form submission -->
+            <input type="hidden" name="user_type" value="{{ request.form.get('user_type', 'all') }}">
             
             <table class="table">
                 <thead>
@@ -30,7 +66,10 @@
                             <select name="map_{{ placeholder }}" class="form-select" required>
                                 <option value="">-- Select Field --</option>
                                 {% for field in sample_user_fields %}
-                                <option value="{{ field }}">{{ field }}</option>
+                                <option value="{{ field }}" 
+                                    {% if request.form.get('map_' + placeholder) == field %}selected{% endif %}>
+                                    {{ field }}
+                                </option>
                                 {% endfor %}
                             </select>
                         </td>

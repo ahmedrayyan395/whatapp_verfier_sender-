@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="fas fa-users"></i> Manage Users</h2>
+    
+    <ul class="nav nav-tabs mt-4" id="userTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="add-tab" data-bs-toggle="tab" data-bs-target="#addUser" type="button">
+                <i class="fas fa-user-plus"></i> Add User
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="bulk-tab" data-bs-toggle="tab" data-bs-target="#bulkImport" type="button">
+                <i class="fas fa-file-import"></i> Bulk Import
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="userTabsContent">
+        <!-- Add Single User Tab -->
+        <div class="tab-pane fade show active" id="addUser" role="tabpanel">
+            <div class="card mt-3">
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('manage_users') }}">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Name *</label>
+                                    <input type="text" name="name" class="form-control" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Phone *</label>
+                                    <input type="text" name="phone" class="form-control" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">User Type *</label>
+                                    
+
+                                     <select name="user_type" class="form-select" required>
+                                            {% if user_types %}
+                                                {% for type in user_types %}
+                                                    <option value="{{ type['user_type'] }}"
+                                                        {% if request.form.get('user_type') == type['user_type'] %}selected{% endif %}>
+                                                        {{ type['user_type']|title }}
+                                                    </option>
+                                                {% endfor %}
+                                            {% else %}
+                                                <option value="">No user types found</option>
+                                            {% endif %}
+                                    </select>
+
+
+
+
+
+
+                                    
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Order ID</label>
+                                    <input type="text" name="order_id" class="form-control">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Offer Details</label>
+                            <textarea name="offer_details" class="form-control" rows="2"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save User
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Import Tab -->
+        <div class="tab-pane fade" id="bulkImport" role="tabpanel">
+            <div class="card mt-3">
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('manage_users') }}" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">Excel File *</label>
+                            <input type="file" name="excel_file" class="form-control" accept=".xlsx" required>
+                            <div class="form-text">
+                                Upload Excel file with columns: name, phone, user_type (optional: order_id, offer_details)
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> 
+                            <strong>Download template:</strong> 
+                            <a href="{{ url_for('download_user_template') }}" class="alert-link">
+                                <i class="fas fa-file-excel"></i> User Import Template.xlsx
+                            </a>
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-file-import"></i> Import Users
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User List -->
+    <div class="card mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> User List</h5>
+            <div>
+                <span class="badge bg-primary">Total: {{ users|length }}</span>
+                {% for type in user_types %}
+                    <span class="badge bg-secondary">{{ type['user_type'] }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>Type</th>
+                            <th>Order ID</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user['name'] }}</td>
+                            <td>{{ user['phone'] }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if user['user_type'] == 'vip' else 'info' }}">
+                                    {{ user['user_type'] }}
+                                </span>
+                            </td>
+                            <td>{{ user['order_id'] }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('delete_user', user_id=user['id']) }}" 
+                                      onsubmit="return confirm('Delete this user?');" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center">No users found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-plus-circle"></i> Create New Template</h2>
+        <a href="{{ url_for('manage_templates') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Templates
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('create_template') }}">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Template Name *</label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">A unique name to identify this template</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="subject" class="form-label">Subject</label>
+                    <input type="text" class="form-control" id="subject" name="subject">
+                    <div class="form-text">Optional subject line (for email templates)</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="body" class="form-label">Template Body *</label>
+                    <textarea class="form-control" id="body" name="body" rows="10" required></textarea>
+                    <div class="form-text">
+                        Use {% raw %}{{variable_name}}{% endraw %} syntax for placeholders. Example: Hello {% raw %}{{customer_name}}{% endraw %}, your order {% raw %}{{order_id}}{% endraw %} is ready.
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button type="reset" class="btn btn-secondary me-md-2">
+                        <i class="fas fa-undo"></i> Reset
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Create Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0"><i class="fas fa-lightbulb"></i> Template Tips</h5>
+        </div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item">
+                    <strong>Variables:</strong> Use double curly braces {% raw %}{{ }}{% endraw %} to mark variables that will be replaced with actual values
+                </li>
+                <li class="list-group-item">
+                    <strong>Example:</strong> "Hello {% raw %}{{name}}{% endraw %}, your order {% raw %}{{order_number}}{% endraw %} will arrive on {% raw %}{{delivery_date}}{% endraw %}"
+                </li>
+                <li class="list-group-item">
+                    <strong>Keep it simple:</strong> Use clear variable names that match your data fields
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

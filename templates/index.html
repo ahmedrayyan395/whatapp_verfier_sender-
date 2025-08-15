@@ -62,9 +62,12 @@
                                         <div>
                                             <input class="form-check-input me-3" type="radio" name="selected_number" 
                                                    value="{{ number[0] }}" required>
+
                                             <strong>{{ number[1] }}</strong>
+
                                             <div class="text-muted small">{{ number[0] }}</div>
                                         </div>
+                                        
                                         <span class="badge rounded-pill {{ 'verified-badge' if number[2] == 'APPROVED' else 'expired-badge' }}">
                                             {{ number[2] }}
                                         </span>
