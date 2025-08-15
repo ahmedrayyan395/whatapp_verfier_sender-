@@ -35,33 +35,29 @@
                                 </div>
                             </div>
                             <div class="col-md-6">
+
+
+
                                 <div class="mb-3">
                                     <label class="form-label">User Type *</label>
                                     
 
-
-
-
-                                                <input list="user_types" name="user_type" class="form-control" required
-       value="{{ request.form.get('user_type', '') }}">
-<datalist id="user_types">
-    {% if user_types %}
-        {% for type in user_types %}
-            <option value="{{ type['user_type']|title }}">
-        {% endfor %}
-    {% else %}
-        <option value="No user types found">
-    {% endif %}
-</datalist>
-
-
-
-
-
-
-
+                                                <select name="user_type" class="form-select" required>
+    <option value="">Select user type...</option>
+    {% for type in user_types %}
+    <option value="{{ type['type_name'] }}"
+            {% if request.form.get('user_type') == type['type_name'] %}selected{% endif %}>
+        {{ type['type_name']|title }}
+    </option>
+    {% endfor %}
+</select>
+<div class="form-text">
+    <a href="{{ url_for('manage_user_types') }}">Manage user types</a>
+</div>
 
                                 </div>
+
+
                                 <div class="mb-3">
                                     <label class="form-label">Order ID</label>
                                     <input type="text" name="order_id" class="form-control">

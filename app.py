@@ -55,6 +55,28 @@ def init_db():
 
     with sqlite3.connect('database.db') as conn:
         conn.execute('''
+            CREATE TABLE IF NOT EXISTS user_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type_name TEXT UNIQUE NOT NULL,
+                description TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        # Add default types if table is empty
+        if conn.execute('SELECT COUNT(*) FROM user_types').fetchone()[0] == 0:
+            default_types = [
+                ('regular', 'Regular users'),
+                ('vip', 'VIP customers'),
+                ('test', 'Test accounts'),
+                ('inactive', 'Inactive users')
+            ]
+            conn.executemany('''
+                INSERT INTO user_types (type_name, description)
+                VALUES (?, ?)
+            ''', default_types)
+
+    with sqlite3.connect('database.db') as conn:
+        conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -554,7 +576,19 @@ def manage_users():
     with sqlite3.connect('database.db') as conn:
         conn.row_factory = sqlite3.Row
         users = conn.execute('SELECT * FROM users ORDER BY name').fetchall()
-        user_types = conn.execute('SELECT DISTINCT user_type FROM users').fetchall()
+
+
+
+
+        # user_types = conn.execute('SELECT DISTINCT user_type FROM users').fetchall()
+        # Get all available user types from database
+        with sqlite3.connect('database.db') as conn:
+            conn.row_factory = sqlite3.Row
+            user_types = conn.execute('''
+                SELECT type_name FROM user_types ORDER BY type_name
+            ''').fetchall()
+
+        
     
     return render_template('manage_users.html', users=users, user_types=user_types)
 
@@ -593,6 +627,66 @@ def download_user_template():
         download_name='User_Import_Template.xlsx',
         as_attachment=True
     )
+
+
+
+
+
+
+
+
+@app.route('/user_types', methods=['GET', 'POST'])
+def manage_user_types():
+    if request.method == 'POST':
+        type_name = request.form.get('type_name').lower().strip()
+        description = request.form.get('description', '').strip()
+        
+        try:
+            with sqlite3.connect('database.db') as conn:
+                conn.execute('''
+                    INSERT INTO user_types (type_name, description)
+                    VALUES (?, ?)
+                ''', (type_name, description))
+            flash(f'User type "{type_name}" created successfully', 'success')
+        except sqlite3.IntegrityError:
+            flash(f'User type "{type_name}" already exists', 'error')
+        
+        return redirect(url_for('manage_user_types'))
+    
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        types = conn.execute('''
+            SELECT * FROM user_types ORDER BY type_name
+        ''').fetchall()
+    
+    return render_template('manage_user_types.html', user_types=types)
+
+@app.route('/user_type/delete/<type_name>', methods=['POST'])
+def delete_user_type(type_name):
+    try:
+        with sqlite3.connect('database.db') as conn:
+            # Check if any users have this type
+            user_count = conn.execute('''
+                SELECT COUNT(*) FROM users WHERE user_type = ?
+            ''', (type_name,)).fetchone()[0]
+            
+            if user_count > 0:
+                flash(f'Cannot delete - {user_count} users have this type', 'error')
+            else:
+                conn.execute('''
+                    DELETE FROM user_types WHERE type_name = ?
+                ''', (type_name,))
+                flash(f'User type "{type_name}" deleted', 'success')
+    except Exception as e:
+        flash(f'Error deleting type: {str(e)}', 'error')
+    
+    return redirect(url_for('manage_user_types'))
+
+
+
+
+
+
 
 
 @app.route('/results')
