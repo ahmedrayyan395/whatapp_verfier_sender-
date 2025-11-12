@@ -12,9 +12,7 @@
         <h1>Map Fields for {{ template_id.replace('_', ' ').title() }}</h1>
 
         <!-- User Type Selection Card -->
-        <!-- {% set selected_type = request.form.get('user_type', 'all') %} -->
-
-        
+        {% set selected_type = request.form.get('user_type', 'all') %}
 
         {% if error %}
         <div class="alert alert-danger">{{ error }}</div>
@@ -23,70 +21,103 @@
         <form method="POST" action="{{ url_for('send_template') }}">
             <input type="hidden" name="template_id" value="{{ template_id }}">
 
-
-
             <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Recipient Selection</h5>
-                <div class="mb-3">
-                    <label class="form-label">Sending to:</label>
-                    <select name="user_type" class="form-select" required>
-                        <option value="all" {% if selected_type == 'all' %}selected{% endif %}>
-                            All Users
-                        </option>
-                        {% for type in user_types %}
-                            <option value="{{ type['user_type'] }}" {% if selected_type == type['user_type'] %}selected{% endif %}>
-                                {{ type['user_type']|title }} Users
+                <div class="card-body">
+                    <h5 class="card-title">Recipient Selection</h5>
+                    <div class="mb-3">
+                        <label class="form-label">Sending to:</label>
+                        <select name="user_type" class="form-select" required>
+                            <option value="all" {% if selected_type == 'all' %}selected{% endif %}>
+                                All Users
                             </option>
-                        {% endfor %}
-                    </select>
-                    <!-- <div class="form-text">
-                        Selected: {{ users|length }} users will receive this message
-                    </div> -->
+                            {% for type in user_types %}
+                                <option value="{{ type['user_type'] }}" {% if selected_type == type['user_type'] %}selected{% endif %}>
+                                    {{ type['user_type']|title }} Users
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
             </div>
-        </div>
 
+            <!-- Template Preview -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Template Preview</h5>
+                </div>
+                <div class="card-body">
+                    {% if template.has_image and template.template_image_path %}
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-image"></i>
+                        <strong>Image Template:</strong> This template will send an image with your text as caption.
+                    </div>
+                    <div class="mb-3">
+                        <strong>Image Preview:</strong><br>
+                        <img src="{{ url_for('static', filename=template.template_image_path.replace('static/', '')) }}" 
+                             style="max-width: 300px; max-height: 200px;" 
+                             class="img-thumbnail" 
+                             alt="Template Image"
+                             onerror="this.style.display='none'">
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <strong>Message Content:</strong>
+                        <div class="border p-3 bg-light rounded mt-2">
+                            {{ template.body }}
+                        </div>
+                    </div>
+                    
+                    {% if template.has_image %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Note:</strong> For image templates, your message will be sent as the image caption.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
 
-
-
+            <!-- Field Mapping -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Map Template Variables</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Template Variable</th>
+                                <th>Map to User Field</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for placeholder in placeholders %}
+                            <tr>
+                                <td><strong>{{ "{{" + placeholder + "}}" }}</strong></td>
+                                <td>
+                                    <select name="map_{{ placeholder }}" class="form-select" required>
+                                        <option value="">-- Select Field --</option>
+                                        {% for field in sample_user_fields %}
+                                        <option value="{{ field }}" 
+                                            {% if request.form.get('map_' + placeholder) == field %}selected{% endif %}>
+                                            {{ field }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             
-            <!-- Include the user_type in the form submission -->
-            <input type="hidden" name="user_type" value="{{ request.form.get('user_type', 'all') }}">
-            
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Template Variable</th>
-                        <th>Map to User Field</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for placeholder in placeholders %}
-                    <tr>
-                        <td>{{ "{{" + placeholder + "}}" }}</td>
-                        <td>
-                            <select name="map_{{ placeholder }}" class="form-select" required>
-                                <option value="">-- Select Field --</option>
-                                {% for field in sample_user_fields %}
-                                <option value="{{ field }}" 
-                                    {% if request.form.get('map_' + placeholder) == field %}selected{% endif %}>
-                                    {{ field }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            
-            <button type="submit" class="btn btn-primary">Send Messages</button>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <a href="{{ url_for('send_template') }}" class="btn btn-secondary me-md-2">Cancel</a>
+                <button type="submit" class="btn btn-primary">Send Messages</button>
+            </div>
         </form>
-   
     </div>
-
-    
-{% endblock %}
+    {% endblock %}
 </body>
 </html>

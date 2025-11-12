@@ -11,7 +11,7 @@
 
     <div class="card">
         <div class="card-body">
-            <form method="POST" action="{{ url_for('create_template') }}">
+            <form method="POST" action="{{ url_for('create_template') }}" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label for="name" class="form-label">Template Name *</label>
                     <input type="text" class="form-control" id="name" name="name" required>
@@ -21,7 +21,27 @@
                 <div class="mb-3">
                     <label for="subject" class="form-label">Subject</label>
                     <input type="text" class="form-control" id="subject" name="subject">
-                    <div class="form-text">Optional subject line (for email templates)</div>
+                    <div class="form-text">Optional subject line</div>
+                </div>
+
+                <!-- Image Content Option -->
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="has_image" name="has_image" value="yes">
+                        <label class="form-check-label" for="has_image">
+                            <strong>Include Image as Main Content</strong>
+                        </label>
+                    </div>
+                    <div class="form-text">Check this if you want to send an image as the main content instead of just text</div>
+                </div>
+
+                <!-- Image Upload Section -->
+                <div class="mb-3 image-section" style="display: none;">
+                    <label for="template_image" class="form-label">Template Image *</label>
+                    <input type="file" class="form-control" id="template_image" name="template_image" accept="image/*">
+                    <div class="form-text">
+                        Upload an image for the template. Supported formats: JPG, PNG, GIF. Max size: 5MB
+                    </div>
                 </div>
                 
                 <div class="mb-3">
@@ -57,10 +77,28 @@
                     <strong>Example:</strong> "Hello {% raw %}{{name}}{% endraw %}, your order {% raw %}{{order_number}}{% endraw %} will arrive on {% raw %}{{delivery_date}}{% endraw %}"
                 </li>
                 <li class="list-group-item">
-                    <strong>Keep it simple:</strong> Use clear variable names that match your data fields
+                    <strong>Images:</strong> When including images, the image will be sent as the main content with your text as caption
                 </li>
             </ul>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const hasImageCheckbox = document.getElementById('has_image');
+    const imageSection = document.querySelector('.image-section');
+
+    function toggleImageSection() {
+        if (hasImageCheckbox.checked) {
+            imageSection.style.display = 'block';
+        } else {
+            imageSection.style.display = 'none';
+        }
+    }
+
+    hasImageCheckbox.addEventListener('change', toggleImageSection);
+    toggleImageSection(); // Initial call
+});
+</script>
 {% endblock %}
