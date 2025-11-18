@@ -1,0 +1,608 @@
+<?php
+// db.php
+function get_db_connection() {
+    $db = new SQLite3('database.db');
+    return $db;
+}
+
+function init_db() {
+    $db = get_db_connection();
+    
+    // Create user_types table
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS user_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type_name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ');
+    
+    // Add default types if table is empty
+    $result = $db->query('SELECT COUNT(*) as count FROM user_types');
+    $row = $result->fetchArray(SQLITE3_ASSOC);
+    if ($row['count'] == 0) {
+        $default_types = [
+            ['regular', 'Regular users'],
+            ['vip', 'VIP customers'],
+            ['test', 'Test accounts'],
+            ['inactive', 'Inactive users']
+        ];
+        
+        $stmt = $db->prepare('INSERT INTO user_types (type_name, description) VALUES (?, ?)');
+        foreach ($default_types as $type) {
+            $stmt->bindValue(1, $type[0], SQLITE3_TEXT);
+            $stmt->bindValue(2, $type[1], SQLITE3_TEXT);
+            $stmt->execute();
+        }
+    }
+    
+    // Create users table
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL UNIQUE,
+            order_id TEXT,
+            offer_details TEXT,
+            user_type TEXT NOT NULL DEFAULT "regular",
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ');
+    
+    // Create sent_messages table
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS sent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user TEXT,
+            phone TEXT,
+            message TEXT,
+            message_id TEXT,
+            status TEXT,
+            delivery_status TEXT,
+            timestamp TEXT
+        )
+    ');
+    
+    // Create whatsapp_numbers table
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS whatsapp_numbers (
+            phone_number_id TEXT PRIMARY KEY,
+            verified_name TEXT,
+            code_verification_status TEXT,
+            token TEXT
+        )
+    ');
+    
+    // Create templates table
+    $db->exec('
+        CREATE TABLE IF NOT EXISTS templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            subject TEXT,
+            body TEXT,
+            has_image BOOLEAN DEFAULT FALSE,
+            template_image_path TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ');
+    
+    $db->close();
+}
+
+function get_template($template_id) {
+    $db = get_db_connection();
+    $stmt = $db->prepare('SELECT * FROM templates WHERE id = ?');
+    $stmt->bindValue(1, $template_id, SQLITE3_INTEGER);
+    $result = $stmt->execute();
+    $template = $result->fetchArray(SQLITE3_ASSOC);
+    $db->close();
+    return $template;
+}
+
+function get_all_templates() {
+    $db = get_db_connection();
+    $result = $db->query('SELECT * FROM templates ORDER BY created_at DESC');
+    $templates = [];
+    while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+        $templates[] = $row;
+    }
+    $db->close();
+    return $templates;
+}
+?>
+
+
+
+
+
+
+
+
+
+<?php
+// config.php
+define('UPLOAD_FOLDER', 'static/uploads/');
+$ALLOWED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif'];
+
+function allowed_file($filename) {
+    global $ALLOWED_EXTENSIONS;
+    $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    return in_array($extension, $ALLOWED_EXTENSIONS);
+}
+
+function secure_filename($filename) {
+    $filename = basename($filename);
+    $filename = preg_replace('/[^a-zA-Z0-9\._-]/', '_', $filename);
+    return $filename;
+}
+
+function clean_param($text) {
+    return trim($text);
+}
+
+function get_template_variables($body) {
+    preg_match_all('/\{\{([^}]+)\}\}/', $body, $matches);
+    return array_unique($matches[1]);
+}
+?>
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+// whatsapp_functions.php
+function upload_media_to_whatsapp($access_token, $phone_number_id, $image_path) {
+    try {
+        error_log("📤 Uploading media to WhatsApp: $image_path");
+        
+        if (!file_exists($image_path)) {
+            error_log("❌ File not found: $image_path");
+            return null;
+        }
+        
+        $file_extension = strtolower(pathinfo($image_path, PATHINFO_EXTENSION));
+        $content_type = null;
+        
+        if (in_array($file_extension, ['jpg', 'jpeg'])) {
+            $content_type = 'image/jpeg';
+        } elseif ($file_extension == 'png') {
+            $content_type = 'image/png';
+        } elseif ($file_extension == 'gif') {
+            $content_type = 'image/gif';
+        } else {
+            error_log("❌ Unsupported file type: $file_extension");
+            return null;
+        }
+        
+        $file_content = file_get_contents($image_path);
+        $filename = basename($image_path);
+        
+        $boundary = '----WebKitFormBoundary' . uniqid();
+        $data = "--$boundary\r\n";
+        $data .= "Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n";
+        $data .= "Content-Type: $content_type\r\n\r\n";
+        $data .= $file_content . "\r\n";
+        $data .= "--$boundary\r\n";
+        $data .= "Content-Disposition: form-data; name=\"messaging_product\"\r\n\r\n";
+        $data .= "whatsapp\r\n";
+        $data .= "--$boundary\r\n";
+        $data .= "Content-Disposition: form-data; name=\"type\"\r\n\r\n";
+        $data .= explode('/', $content_type)[0] . "\r\n";
+        $data .= "--$boundary--\r\n";
+        
+        $headers = [
+            "Authorization: Bearer $access_token",
+            "Content-Type: multipart/form-data; boundary=$boundary"
+        ];
+        
+        $url = "https://graph.facebook.com/v23.0/$phone_number_id/media";
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        error_log("📡 Response Status: $http_code");
+        
+        if ($http_code == 200) {
+            $response_data = json_decode($response, true);
+            $media_id = $response_data['id'] ?? null;
+            error_log("✅ Media uploaded successfully! Media ID: $media_id");
+            return $media_id;
+        } else {
+            error_log("❌ Media upload failed: $http_code - $response");
+            return null;
+        }
+        
+    } catch (Exception $e) {
+        error_log("❌ Unexpected error uploading media: " . $e->getMessage());
+        return null;
+    }
+}
+?>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+// create_template_backend.php
+require_once 'config.php';
+require_once 'db.php';
+
+session_start();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $name = $_POST['name'] ?? '';
+    $subject = $_POST['subject'] ?? '';
+    $body = $_POST['body'] ?? '';
+    $has_image = isset($_POST['has_image']) && $_POST['has_image'] === 'yes';
+    
+    if (empty($name) || empty($body)) {
+        $_SESSION['flash'] = ['type' => 'error', 'message' => 'Template name and body are required'];
+        header('Location: create_template.php');
+        exit;
+    }
+    
+    $template_image_path = null;
+    if ($has_image && isset($_FILES['template_image']) && $_FILES['template_image']['error'] === UPLOAD_ERR_OK) {
+        $file = $_FILES['template_image'];
+        $filename = $file['name'];
+        
+        if (allowed_file($filename)) {
+            $secure_filename = secure_filename($name . '_' . $filename);
+            $upload_dir = UPLOAD_FOLDER;
+            
+            if (!is_dir($upload_dir)) {
+                mkdir($upload_dir, 0755, true);
+            }
+            
+            $file_path = $upload_dir . $secure_filename;
+            
+            if (move_uploaded_file($file['tmp_name'], $file_path)) {
+                $template_image_path = $file_path;
+            } else {
+                $_SESSION['flash'] = ['type' => 'error', 'message' => 'Failed to upload image'];
+                header('Location: create_template.php');
+                exit;
+            }
+        } else {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => 'Invalid image file. Please use JPG, PNG, or GIF format.'];
+            header('Location: create_template.php');
+            exit;
+        }
+    }
+    
+    try {
+        $db = get_db_connection();
+        $stmt = $db->prepare('
+            INSERT INTO templates (name, subject, body, has_image, template_image_path)
+            VALUES (?, ?, ?, ?, ?)
+        ');
+        $stmt->bindValue(1, $name, SQLITE3_TEXT);
+        $stmt->bindValue(2, $subject, SQLITE3_TEXT);
+        $stmt->bindValue(3, $body, SQLITE3_TEXT);
+        $stmt->bindValue(4, $has_image ? 1 : 0, SQLITE3_INTEGER);
+        $stmt->bindValue(5, $template_image_path, SQLITE3_TEXT);
+        
+        if ($stmt->execute()) {
+            $_SESSION['flash'] = ['type' => 'success', 'message' => 'Template created successfully'];
+            header('Location: manage_templates.php');
+            exit;
+        }
+    } catch (Exception $e) {
+        if (strpos($e->getMessage(), 'UNIQUE constraint failed') !== false) {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => 'Template with this name already exists'];
+        } else {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => 'Database error: ' . $e->getMessage()];
+        }
+        header('Location: create_template.php');
+        exit;
+    } finally {
+        $db->close();
+    }
+}
+?>
+
+
+
+
+
+
+<?php
+// send_template_backend.php
+require_once 'config.php';
+require_once 'db.php';
+require_once 'whatsapp_functions.php';
+
+session_start();
+
+// Verify we have a selected number
+if (!isset($_SESSION['selected_number'])) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => 'No WhatsApp number selected'];
+    header('Location: index.php');
+    exit;
+}
+
+// Get access token for selected number
+$db = get_db_connection();
+$stmt = $db->prepare('SELECT token FROM whatsapp_numbers WHERE phone_number_id = ?');
+$stmt->bindValue(1, $_SESSION['selected_number'], SQLITE3_TEXT);
+$result = $stmt->execute();
+$token_row = $result->fetchArray(SQLITE3_ASSOC);
+$db->close();
+
+if (!$token_row) {
+    $_SESSION['flash'] = ['type' => 'error', 'message' => 'Access token not found for selected number'];
+    header('Location: index.php');
+    exit;
+}
+
+$access_token = $token_row['token'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $template_id = $_POST['template_id'] ?? '';
+    $selected_user_type = $_POST['user_type'] ?? '';
+    $selected_template = get_template($template_id);
+    
+    if (!$selected_template) {
+        $_SESSION['flash'] = ['type' => 'error', 'message' => 'Invalid template'];
+        header('Location: send_template.php');
+        exit;
+    }
+    
+    // Get users based on the selected type
+    $db = get_db_connection();
+    if ($selected_user_type === 'all') {
+        $users_result = $db->query('SELECT * FROM users');
+    } else {
+        $stmt = $db->prepare('SELECT * FROM users WHERE user_type = ?');
+        $stmt->bindValue(1, $selected_user_type, SQLITE3_TEXT);
+        $users_result = $stmt->execute();
+    }
+    
+    $users = [];
+    while ($row = $users_result->fetchArray(SQLITE3_ASSOC)) {
+        $users[] = $row;
+    }
+    $db->close();
+    
+    if (empty($users)) {
+        $_SESSION['flash'] = ['type' => 'warning', 'message' => "No users found for type: $selected_user_type"];
+        header('Location: send_template.php');
+        exit;
+    }
+    
+    // Validate all mappings
+    $placeholder_map = [];
+    $missing_mappings = [];
+    $placeholders = get_template_variables($selected_template['body']);
+    
+    foreach ($placeholders as $placeholder) {
+        $field = $_POST["map_$placeholder"] ?? '';
+        if (empty($field)) {
+            $missing_mappings[] = $placeholder;
+        } else {
+            $placeholder_map[$placeholder] = $field;
+        }
+    }
+    
+    if (!empty($missing_mappings)) {
+        $_SESSION['flash'] = ['type' => 'error', 'message' => "Please select fields for: " . implode(', ', $missing_mappings)];
+        header("Location: send_template.php?template_id=$template_id");
+        exit;
+    }
+    
+    // Upload template image if template has image
+    $media_id = null;
+    if ($selected_template['has_image'] && !empty($selected_template['template_image_path'])) {
+        $image_path = $selected_template['template_image_path'];
+        
+        if (!file_exists($image_path)) {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => "Template image not found: $image_path"];
+            header('Location: send_template.php');
+            exit;
+        }
+        
+        $media_id = upload_media_to_whatsapp($access_token, $_SESSION['selected_number'], $image_path);
+        if (!$media_id) {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => 'Failed to upload template image to WhatsApp'];
+            header('Location: send_template.php');
+            exit;
+        }
+    }
+    
+    // Process and send messages
+    $sent_results = [];
+    $phone_number_id = $_SESSION['selected_number'];
+    
+    foreach ($users as $user) {
+        try {
+            $message_body = $selected_template['body'];
+            $phone = $user['phone'] ?? '';
+            $user_name = $user['name'] ?? '';
+            
+            // Replace placeholders with user data
+            foreach ($placeholder_map as $placeholder => $field) {
+                $value = $user[$field] ?? "[MISSING: $field]";
+                $message_body = str_replace("{{$placeholder}}", $value, $message_body);
+            }
+            
+            $message = clean_param($message_body);
+            
+            // Prepare payload
+            $payload = [
+                "messaging_product" => "whatsapp",
+                "to" => $phone,
+                "type" => "template",
+                "template" => [
+                    "name" => "the_big_beautiful_template",
+                    "language" => ["code" => "en"],
+                    "components" => []
+                ]
+            ];
+            
+            // Add image header if template has image
+            if ($selected_template['has_image'] && $media_id) {
+                $payload["template"]["components"][] = [
+                    "type" => "header",
+                    "parameters" => [
+                        [
+                            "type" => "image",
+                            "image" => ["id" => $media_id]
+                        ]
+                    ]
+                ];
+            }
+            
+            // Add body component
+            $body_parameters = [];
+            
+            if (count($placeholders) >= 1) {
+                $field1 = $placeholder_map[$placeholders[0]] ?? '';
+                $value1 = !empty($field1) ? ($user[$field1] ?? '') : $user_name;
+                if (empty(trim($value1))) {
+                    $value1 = "Customer";
+                }
+                $body_parameters[] = ["type" => "text", "text" => $value1];
+            }
+            
+            if (count($placeholders) >= 2) {
+                $field2 = $placeholder_map[$placeholders[1]] ?? '';
+                $value2 = !empty($field2) ? ($user[$field2] ?? '') : "We have a special offer for you!";
+                if (empty(trim($value2))) {
+                    $value2 = "Check out our latest offers!";
+                }
+                $body_parameters[] = ["type" => "text", "text" => $value2];
+            }
+            
+            if (count($body_parameters) > 2) {
+                $body_parameters = array_slice($body_parameters, 0, 2);
+            }
+            
+            if (!empty($body_parameters)) {
+                $payload["template"]["components"][] = [
+                    "type" => "body",
+                    "parameters" => $body_parameters
+                ];
+            }
+            
+            $headers = [
+                "Authorization: Bearer $access_token",
+                "Content-Type: application/json"
+            ];
+            
+            // Send message
+            $url = "https://graph.facebook.com/v23.0/$phone_number_id/messages";
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            $response_data = json_decode($response, true);
+            $message_id = 'N/A';
+            
+            if ($http_code == 200) {
+                $status = '✅ Sent';
+                $message_id = $response_data['messages'][0]['id'] ?? 'N/A';
+                $delivery_status = 'Delivered to WhatsApp';
+            } elseif ($http_code == 400) {
+                $status = "❌ Failed (Invalid Request)";
+                $error_message = $response_data['error']['message'] ?? 'Unknown error';
+                $delivery_status = "Failed: $error_message";
+                $message_id = "failed_" . date('YmdHisu');
+            } else {
+                $status = "❌ Failed ($http_code)";
+                $delivery_status = "Unknown error occurred";
+                $message_id = "error_" . date('YmdHisu');
+            }
+            
+            // Save to DB for webhook tracking
+            $db = get_db_connection();
+            $stmt = $db->prepare('
+                INSERT INTO sent_messages 
+                (user, phone, message, message_id, status, delivery_status, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ');
+            $stmt->bindValue(1, $user['name'] ?? 'N/A', SQLITE3_TEXT);
+            $stmt->bindValue(2, $phone, SQLITE3_TEXT);
+            $stmt->bindValue(3, $message, SQLITE3_TEXT);
+            $stmt->bindValue(4, $message_id, SQLITE3_TEXT);
+            $stmt->bindValue(5, $status, SQLITE3_TEXT);
+            $stmt->bindValue(6, $delivery_status, SQLITE3_TEXT);
+            $stmt->bindValue(7, date('Y-m-d H:i:s'), SQLITE3_TEXT);
+            $stmt->execute();
+            $db->close();
+            
+            $sent_results[] = [
+                'user' => $user['name'] ?? 'N/A',
+                'phone' => $phone,
+                'status' => $status,
+                'user_type' => $user['user_type'] ?? 'unknown'
+            ];
+            
+        } catch (Exception $e) {
+            $sent_results[] = [
+                'user' => $user['name'] ?? 'N/A',
+                'phone' => $user['phone'] ?? 'N/A',
+                'status' => "❌ Failed: " . $e->getMessage(),
+            ];
+        }
+    }
+    
+    // Prepare summary message
+    $success_count = 0;
+    foreach ($sent_results as $result) {
+        if (strpos($result['status'], '✅') === 0) {
+            $success_count++;
+        }
+    }
+    $failure_count = count($sent_results) - $success_count;
+    
+    $_SESSION['flash'] = [
+        'type' => $success_count > 0 ? 'success' : 'warning',
+        'message' => "Messages sent successfully to $success_count users. Failed to send to $failure_count users."
+    ];
+    
+    // Store results in session for display
+    $_SESSION['last_send_results'] = [
+        'template_name' => $selected_template['name'],
+        'user_type' => $selected_user_type,
+        'results' => $sent_results,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+    
+    header('Location: show_results.php');
+    exit;
+}
+?>

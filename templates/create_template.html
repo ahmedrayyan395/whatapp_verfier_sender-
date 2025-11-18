@@ -24,23 +24,29 @@
                     <div class="form-text">Optional subject line</div>
                 </div>
 
-                <!-- Image Content Option -->
+                <!-- Document Content Option -->
                 <div class="mb-3">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="has_image" name="has_image" value="yes">
-                        <label class="form-check-label" for="has_image">
-                            <strong>Include Image as Main Content</strong>
+                        <input class="form-check-input" type="checkbox" id="has_document" name="has_document" value="yes">
+                        <label class="form-check-label" for="has_document">
+                            <strong>Include Document as Attachment</strong>
                         </label>
                     </div>
-                    <div class="form-text">Check this if you want to send an image as the main content instead of just text</div>
+                    <div class="form-text">Check this if you want to send a document along with your message</div>
                 </div>
 
-                <!-- Image Upload Section -->
-                <div class="mb-3 image-section" style="display: none;">
-                    <label for="template_image" class="form-label">Template Image *</label>
-                    <input type="file" class="form-control" id="template_image" name="template_image" accept="image/*">
+                <!-- Document Upload Section -->
+                <div class="mb-3 document-section" style="display: none;">
+                    <label for="template_document" class="form-label">Template Document *</label>
+                    <input type="file" class="form-control" id="template_document" name="template_document" accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.ppt,.pptx">
                     <div class="form-text">
-                        Upload an image for the template. Supported formats: JPG, PNG, GIF. Max size: 5MB
+                        Upload a document for the template. Supported formats: PDF, DOC, DOCX, TXT, XLSX, XLS, PPT, PPTX. Max size: 16MB
+                    </div>
+                    
+                    <div class="mt-2">
+                        <label for="document_filename" class="form-label">Document Filename (optional)</label>
+                        <input type="text" class="form-control" id="document_filename" name="document_filename" placeholder="custom-filename.pdf">
+                        <div class="form-text">Custom filename for the document when sent (if not provided, original filename will be used)</div>
                     </div>
                 </div>
                 
@@ -77,7 +83,7 @@
                     <strong>Example:</strong> "Hello {% raw %}{{name}}{% endraw %}, your order {% raw %}{{order_number}}{% endraw %} will arrive on {% raw %}{{delivery_date}}{% endraw %}"
                 </li>
                 <li class="list-group-item">
-                    <strong>Images:</strong> When including images, the image will be sent as the main content with your text as caption
+                    <strong>Documents:</strong> When including documents, the document will be sent as an attachment along with your text message
                 </li>
             </ul>
         </div>
@@ -86,19 +92,19 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const hasImageCheckbox = document.getElementById('has_image');
-    const imageSection = document.querySelector('.image-section');
+    const hasDocumentCheckbox = document.getElementById('has_document');
+    const documentSection = document.querySelector('.document-section');
 
-    function toggleImageSection() {
-        if (hasImageCheckbox.checked) {
-            imageSection.style.display = 'block';
+    function toggleDocumentSection() {
+        if (hasDocumentCheckbox.checked) {
+            documentSection.style.display = 'block';
         } else {
-            imageSection.style.display = 'none';
+            documentSection.style.display = 'none';
         }
     }
 
-    hasImageCheckbox.addEventListener('change', toggleImageSection);
-    toggleImageSection(); // Initial call
+    hasDocumentCheckbox.addEventListener('change', toggleDocumentSection);
+    toggleDocumentSection(); // Initial call
 });
 </script>
 {% endblock %}

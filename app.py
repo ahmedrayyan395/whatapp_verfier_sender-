@@ -84,6 +84,7 @@ def clean_param(text):
 #             conn.rollback()
 
 
+
 def init_db():
     with sqlite3.connect('database.db') as conn:
         conn.execute('''
@@ -144,22 +145,129 @@ def init_db():
             )
         ''')
         
-        # Updated templates table with image support
+        # Updated templates table with document support (replacing image support)
         conn.execute('''
             CREATE TABLE IF NOT EXISTS templates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE,
                 subject TEXT,
                 body TEXT,
-                has_image BOOLEAN DEFAULT FALSE,
-                template_image_path TEXT,
+                has_document BOOLEAN DEFAULT FALSE,
+                template_document_path TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
     
     # Run database upgrade to add missing columns to existing tables
-    # upgrade_database()
+    upgrade_database()
+
+def upgrade_database():
+    """Upgrade existing database to add new columns"""
+    with sqlite3.connect('database.db') as conn:
+        try:
+            # Check if has_document column exists in templates table
+            cursor = conn.execute("PRAGMA table_info(templates)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            # Add has_document column if it doesn't exist
+            if 'has_document' not in columns:
+                conn.execute('ALTER TABLE templates ADD COLUMN has_document BOOLEAN DEFAULT FALSE')
+                print("✅ Added has_document column to templates table")
+            
+            # Add template_document_path column if it doesn't exist
+            if 'template_document_path' not in columns:
+                conn.execute('ALTER TABLE templates ADD COLUMN template_document_path TEXT')
+                print("✅ Added template_document_path column to templates table")
+            
+            # Check if old image columns exist and remove them if needed
+            if 'has_image' in columns:
+                # Instead of dropping, we can keep them for backward compatibility or migrate data
+                print("⚠️  has_image column exists - keeping for compatibility")
+            
+            if 'template_image_path' in columns:
+                print("⚠️  template_image_path column exists - keeping for compatibility")
+                
+        except sqlite3.Error as e:
+            print(f"❌ Database upgrade error: {e}")
+
+    # Also upgrade sent_messages table to include message_type if needed
+    with sqlite3.connect('database.db') as conn:
+        try:
+            cursor = conn.execute("PRAGMA table_info(sent_messages)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'message_type' not in columns:
+                conn.execute('ALTER TABLE sent_messages ADD COLUMN message_type TEXT')
+                print("✅ Added message_type column to sent_messages table")
+                
+        except sqlite3.Error as e:
+            print(f"❌ Database upgrade error: {e}")
+
+
+
+def upgrade_database():
+    """Upgrade existing database - replace image columns with document columns"""
+    with sqlite3.connect('database.db') as conn:
+        try:
+            # Check if has_image column exists (old schema)
+            cursor = conn.execute("PRAGMA table_info(templates)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'has_image' in columns and 'has_document' not in columns:
+                print("🔄 Migrating from image to document schema...")
+                
+                # Create a temporary table with the new schema
+                conn.execute('''
+                    CREATE TABLE IF NOT EXISTS templates_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT UNIQUE,
+                        subject TEXT,
+                        body TEXT,
+                        has_document BOOLEAN DEFAULT FALSE,
+                        template_document_path TEXT,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Copy data from old table to new table
+                conn.execute('''
+                    INSERT INTO templates_new (id, name, subject, body, has_document, template_document_path, created_at, updated_at)
+                    SELECT id, name, subject, body, has_image, template_image_path, created_at, updated_at 
+                    FROM templates
+                ''')
+                
+                # Drop old table and rename new table
+                conn.execute('DROP TABLE templates')
+                conn.execute('ALTER TABLE templates_new RENAME TO templates')
+                
+                print("✅ Successfully migrated templates table from image to document schema")
+                
+            elif 'has_document' not in columns:
+                # Add new columns if they don't exist
+                conn.execute('ALTER TABLE templates ADD COLUMN has_document BOOLEAN DEFAULT FALSE')
+                conn.execute('ALTER TABLE templates ADD COLUMN template_document_path TEXT')
+                print("✅ Added document columns to templates table")
+                
+        except sqlite3.Error as e:
+            print(f"❌ Database upgrade error: {e}")
+
+    # Upgrade sent_messages table
+    with sqlite3.connect('database.db') as conn:
+        try:
+            cursor = conn.execute("PRAGMA table_info(sent_messages)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'message_type' not in columns:
+                conn.execute('ALTER TABLE sent_messages ADD COLUMN message_type TEXT')
+                print("✅ Added message_type column to sent_messages table")
+                
+        except sqlite3.Error as e:
+            print(f"❌ Database upgrade error: {e}")
+
+
+
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -293,13 +401,10 @@ import os
 from werkzeug.utils import secure_filename
 
 UPLOAD_FOLDER = 'static/uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_DOCUMENT_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt', 'xlsx', 'xls', 'ppt', 'pptx'}
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-
+def allowed_document_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_DOCUMENT_EXTENSIONS
 
 @app.route('/template/create', methods=['GET', 'POST'])
 def create_template():
@@ -307,33 +412,42 @@ def create_template():
         name = request.form.get('name')
         subject = request.form.get('subject')
         body = request.form.get('body')
-        has_image = request.form.get('has_image') == 'yes'
+        has_document = request.form.get('has_document') == 'yes'
+        document_filename = request.form.get('document_filename')
         
         if not name or not body:
             flash('Template name and body are required', 'error')
             return redirect(url_for('create_template'))
         
-        # Handle image upload
-        template_image_path = None
-        if has_image and 'template_image' in request.files:
-            file = request.files['template_image']
+        # Handle document upload
+        template_document_path = None
+        if has_document and 'template_document' in request.files:
+            file = request.files['template_document']
             if file and file.filename != '':
-                if allowed_file(file.filename):
-                    filename = secure_filename(f"{name}_{file.filename}")
+                if allowed_document_file(file.filename):
+                    # Use custom filename if provided, otherwise use original
+                    if document_filename:
+                        # Ensure the custom filename has the correct extension
+                        original_ext = file.filename.rsplit('.', 1)[1].lower()
+                        custom_name = document_filename.rsplit('.', 1)[0]  # Remove existing extension if any
+                        filename = secure_filename(f"{custom_name}.{original_ext}")
+                    else:
+                        filename = secure_filename(f"{name}_{file.filename}")
+                    
                     os.makedirs('static/uploads', exist_ok=True)
                     file_path = os.path.join('static', 'uploads', filename).replace('\\', '/')
                     file.save(file_path)
-                    template_image_path = file_path
+                    template_document_path = file_path
                 else:
-                    flash('Invalid image file. Please use JPG, PNG, or GIF format.', 'error')
+                    flash('Invalid document file. Please use PDF, DOC, DOCX, TXT, XLSX, XLS, PPT, or PPTX format.', 'error')
                     return redirect(url_for('create_template'))
         
         try:
             with sqlite3.connect('database.db') as conn:
                 conn.execute('''
-                    INSERT INTO templates (name, subject, body, has_image, template_image_path)
+                    INSERT INTO templates (name, subject, body, has_document, template_document_path)
                     VALUES (?, ?, ?, ?, ?)
-                ''', (name, subject, body, has_image, template_image_path))
+                ''', (name, subject, body, has_document, template_document_path))
             flash('Template created successfully', 'success')
             return redirect(url_for('manage_templates'))
         except sqlite3.IntegrityError:
@@ -344,59 +458,50 @@ def create_template():
 
 
 
-@app.route('/template/edit/<int:template_id>', methods=['GET'])
-def edit_template(template_id):
-    template = get_template(template_id)
-    if not template:
-        flash('Template not found', 'error')
-        return redirect(url_for('manage_templates'))
-    return render_template('edit_template.html', template=template)
 
 
 
-@app.route('/template/delete/<int:template_id>', methods=['POST'])
-def delete_template(template_id):
+
+
+
+def upload_document_to_whatsapp(access_token, phone_number_id, document_path, filename=None):
+    """Upload document to WhatsApp and return media ID"""
     try:
-        with sqlite3.connect('database.db') as conn:
-            conn.execute('DELETE FROM templates WHERE id = ?', (template_id,))
-        flash('Template deleted successfully', 'success')
-    except Exception as e:
-        flash(f'Error deleting template: {str(e)}', 'error')
-    return redirect(url_for('manage_templates'))
-
-
-
-
-
-
-def upload_media_to_whatsapp(access_token, phone_number_id, image_path):
-    """Upload image to WhatsApp and return media ID"""
-    try:
-        print(f"📤 Uploading media to WhatsApp: {image_path}")
+        print(f"📤 Uploading document to WhatsApp: {document_path}")
         
         # Check if file exists
-        if not os.path.exists(image_path):
-            print(f"❌ File not found: {image_path}")
+        if not os.path.exists(document_path):
+            print(f"❌ File not found: {document_path}")
             return None
         
         # Determine file type and content type
-        file_extension = image_path.lower().split('.')[-1]
+        file_extension = document_path.lower().split('.')[-1]
         content_type = None
         
-        if file_extension in ['jpg', 'jpeg']:
-            content_type = 'image/jpeg'
-        elif file_extension == 'png':
-            content_type = 'image/png'
-        elif file_extension == 'gif':
-            content_type = 'image/gif'
-        else:
-            print(f"❌ Unsupported file type: {file_extension}")
+        # Map file extensions to MIME types
+        mime_map = {
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'txt': 'text/plain',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'xls': 'application/vnd.ms-excel',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        }
+        
+        content_type = mime_map.get(file_extension)
+        if not content_type:
+            print(f"❌ Unsupported document type: {file_extension}")
             return None
         
         # Prepare the file for upload
-        with open(image_path, 'rb') as file:
+        with open(document_path, 'rb') as file:
+            # Use custom filename if provided, otherwise use original
+            upload_filename = filename or os.path.basename(document_path)
+            
             files = {
-                'file': (os.path.basename(image_path), file, content_type)
+                'file': (upload_filename, file, content_type)
             }
             
             # Prepare headers and data
@@ -406,13 +511,13 @@ def upload_media_to_whatsapp(access_token, phone_number_id, image_path):
             
             data = {
                 "messaging_product": "whatsapp",
-                "type": content_type.split('/')[0]  # 'image' or 'video'
+                "type": "document"
             }
             
             # Upload to WhatsApp
             url = f"https://graph.facebook.com/v23.0/{phone_number_id}/media"
             print(f"🔗 Upload URL: {url}")
-            print(f"📁 File: {os.path.basename(image_path)}")
+            print(f"📁 Document: {upload_filename}")
             print(f"📊 Content Type: {content_type}")
             
             response = requests.post(url, headers=headers, files=files, data=data)
@@ -423,11 +528,11 @@ def upload_media_to_whatsapp(access_token, phone_number_id, image_path):
             if response.status_code == 200:
                 response_data = response.json()
                 media_id = response_data.get('id')
-                print(f"✅ Media uploaded successfully! Media ID: {media_id}")
+                print(f"✅ Document uploaded successfully! Media ID: {media_id}")
                 return media_id
             else:
                 error_message = response.text
-                print(f"❌ Media upload failed: {response.status_code} - {error_message}")
+                print(f"❌ Document upload failed: {response.status_code} - {error_message}")
                 
                 # Try to get more detailed error info
                 try:
@@ -440,13 +545,13 @@ def upload_media_to_whatsapp(access_token, phone_number_id, image_path):
                 return None
                 
     except FileNotFoundError:
-        print(f"❌ File not found: {image_path}")
+        print(f"❌ File not found: {document_path}")
         return None
     except PermissionError:
-        print(f"❌ Permission denied accessing file: {image_path}")
+        print(f"❌ Permission denied accessing file: {document_path}")
         return None
     except Exception as e:
-        print(f"❌ Unexpected error uploading media: {str(e)}")
+        print(f"❌ Unexpected error uploading document: {str(e)}")
         import traceback
         traceback.print_exc()
         return None
@@ -563,19 +668,22 @@ def send_template():
                                user_types=user_types,
                                total_users=total_users)
 
-        # Upload template image if template has image
+        # Upload template document if template has document
         media_id = None
-        if selected_template['has_image'] and selected_template['template_image_path']:
-            image_path = selected_template['template_image_path']
+        if selected_template['has_document'] and selected_template['template_document_path']:
+            document_path = selected_template['template_document_path']
             
             # Check if file exists
-            if not os.path.exists(image_path):
-                flash(f'Template image not found: {image_path}', 'error')
+            if not os.path.exists(document_path):
+                flash(f'Template document not found: {document_path}', 'error')
                 return redirect(url_for('send_template'))
 
-            media_id = upload_media_to_whatsapp(access_token, session['selected_number'], image_path)
+            # Extract filename for WhatsApp
+            document_filename = os.path.basename(document_path)
+            
+            media_id = upload_document_to_whatsapp(access_token, session['selected_number'], document_path, document_filename)
             if not media_id:
-                flash('Failed to upload template image to WhatsApp', 'error')
+                flash('Failed to upload template document to WhatsApp', 'error')
                 return redirect(url_for('send_template'))
 
         # Process and send messages
@@ -595,26 +703,29 @@ def send_template():
 
                 message = clean_param(message_body)
 
-                # ALWAYS send as template message with image header when available
+                # ALWAYS send as template message with document header when available
                 payload = {
                     "messaging_product": "whatsapp",
                     "to": phone,
                     "type": "template",
                     "template": {
-                        "name": "the_big_beautiful_template",
+                        "name": "the_big_beautiful_template_doc",  # Updated template name
                         "language": {"code": "en"},
                         "components": []
                     }
                 }
 
-                # Add image header if template has image
-                if selected_template['has_image'] and media_id:
+                # Add document header if template has document
+                if selected_template['has_document'] and media_id:
                     payload["template"]["components"].append({
                         "type": "header",
                         "parameters": [
                             {
-                                "type": "image",
-                                "image": {"id": media_id}
+                                "type": "document",
+                                "document": {
+                                    "id": media_id,
+                                    "filename": os.path.basename(selected_template['template_document_path'])
+                                }
                             }
                         ]
                     })
@@ -659,8 +770,8 @@ def send_template():
 
                 # Debug: Print the payload before sending
                 print(f"=== SENDING TO {phone} ===")
-                print(f"Template: the_big_beautiful_template")
-                print(f"Has Image Header: {selected_template['has_image']}")
+                print(f"Template: the_big_beautiful_template_doc")
+                print(f"Has Document Header: {selected_template['has_document']}")
                 print(f"Body Parameters: {len(body_parameters)}")
                 print(f"Full Payload: {json.dumps(payload, indent=2)}")
 
@@ -698,8 +809,8 @@ def send_template():
                 with sqlite3.connect('database.db') as conn:
                     conn.execute('''
                         INSERT INTO sent_messages 
-                        (user, phone, message, message_id, status, delivery_status, timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (user, phone, message, message_id, status, delivery_status, timestamp, message_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         user.get('name', 'N/A'),
                         phone,
@@ -708,6 +819,7 @@ def send_template():
                         status,
                         delivery_status,
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'template_document' if selected_template['has_document'] else 'template'
                     ))
 
                 sent_results.append({
@@ -755,7 +867,39 @@ def send_template():
     return render_template('select_template.html', 
                          templates=templates,
                          user_types=user_types,
-                         total_users=total_users)
+                         total_users=total_users)        
+
+@app.route('/template/edit/<int:template_id>', methods=['GET'])
+def edit_template(template_id):
+    template = get_template(template_id)
+    if not template:
+        flash('Template not found', 'error')
+        return redirect(url_for('manage_templates'))
+    return render_template('edit_template.html', template=template)
+
+
+
+@app.route('/template/delete/<int:template_id>', methods=['POST'])
+def delete_template(template_id):
+    try:
+        with sqlite3.connect('database.db') as conn:
+            conn.execute('DELETE FROM templates WHERE id = ?', (template_id,))
+        flash('Template deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting template: {str(e)}', 'error')
+    return redirect(url_for('manage_templates'))
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @app.route('/users', methods=['GET', 'POST'])
